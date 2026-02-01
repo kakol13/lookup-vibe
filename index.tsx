@@ -16,7 +16,11 @@ import {
   Clock,
   RefreshCw,
   Loader2,
-  ArrowRight
+  ArrowRight,
+  ShieldCheck,
+  MapPin,
+  BarChart3,
+  Info
 } from 'lucide-react';
 
 // --- Configuration ---
@@ -31,6 +35,10 @@ interface Member {
   nextDueAmount: string;
   bps: string;
   overdueAmount: string;
+  upline: string;
+  ytdSales: string;
+  availableCredit: string;
+  branch: string;
 }
 
 // --- Formatting Helpers ---
@@ -92,7 +100,6 @@ const parseCSV = (text: string): { members: Member[], sheetUpdateDate: string } 
     return result;
   };
 
-  // Extract A1 cell value as the Sheet Update Date
   const firstRow = splitRow(allLines[0]);
   const sheetUpdateDate = firstRow[0] || 'N/A';
 
@@ -102,12 +109,15 @@ const parseCSV = (text: string): { members: Member[], sheetUpdateDate: string } 
     nextDueDate: ['nextduedate', 'duedate', 'nextdue', 'billingdate', 'expiry', 'due'],
     nextDueAmount: ['nextdueamount', 'dueamount', 'amountdue', 'balance', 'totaldue', 'payable'],
     bps: ['bps', 'brochuresales', 'sales', 'salesvolume', 'volume', 'commission'],
-    overdueAmount: ['overdueamount', 'overdue', 'pastdue', 'arrears', 'delinquent', 'latefee']
+    overdueAmount: ['overdueamount', 'overdue', 'pastdue', 'arrears', 'delinquent', 'latefee'],
+    upline: ['sponsorname', 'uplinename', 'upline', 'sponsor', 'recruiter', 'manager'],
+    ytdSales: ['ytdsales', 'ytdpersonalsales', 'yeartodate', 'ytd'],
+    availableCredit: ['availablecredit', 'creditline', 'availablecreditline', 'creditlimit'],
+    branch: ['branch', 'location', 'office', 'area']
   };
 
   let headerRowIndex = 0;
   let maxScore = -1;
-  // Search through first 10 rows for headers, starting from index 0 or 1
   for (let i = 0; i < Math.min(allLines.length, 10); i++) {
     const row = splitRow(allLines[i]).map(c => c.toLowerCase().replace(/[^a-z0-9]/g, ''));
     let score = 0;
@@ -122,10 +132,19 @@ const parseCSV = (text: string): { members: Member[], sheetUpdateDate: string } 
 
   const rawHeaders = splitRow(allLines[headerRowIndex]);
   const headers = rawHeaders.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  
   const findIndex = (kList: string[]) => {
-    const exact = headers.findIndex(h => kList.some(k => h === k.replace(/[^a-z0-9]/g, '')));
-    if (exact !== -1) return exact;
-    return headers.findIndex(h => kList.some(k => h.includes(k.replace(/[^a-z0-9]/g, ''))));
+    for (const k of kList) {
+      const cleanK = k.replace(/[^a-z0-9]/g, '');
+      const idx = headers.findIndex(h => h === cleanK);
+      if (idx !== -1) return idx;
+    }
+    for (const k of kList) {
+      const cleanK = k.replace(/[^a-z0-9]/g, '');
+      const idx = headers.findIndex(h => h.includes(cleanK));
+      if (idx !== -1) return idx;
+    }
+    return -1;
   };
 
   const indices = {
@@ -134,7 +153,11 @@ const parseCSV = (text: string): { members: Member[], sheetUpdateDate: string } 
     nextDueDate: findIndex(keywords.nextDueDate),
     nextDueAmount: findIndex(keywords.nextDueAmount),
     bps: findIndex(keywords.bps),
-    overdueAmount: findIndex(keywords.overdueAmount)
+    overdueAmount: findIndex(keywords.overdueAmount),
+    upline: findIndex(keywords.upline),
+    ytdSales: findIndex(keywords.ytdSales),
+    availableCredit: findIndex(keywords.availableCredit),
+    branch: findIndex(keywords.branch)
   };
 
   const members = allLines.slice(headerRowIndex + 1).map(line => {
@@ -146,7 +169,11 @@ const parseCSV = (text: string): { members: Member[], sheetUpdateDate: string } 
       nextDueDate: getVal(indices.nextDueDate) || 'N/A',
       nextDueAmount: getVal(indices.nextDueAmount) || '0.00',
       bps: getVal(indices.bps) || '0.00',
-      overdueAmount: getVal(indices.overdueAmount) || '0.00'
+      overdueAmount: getVal(indices.overdueAmount) || '0.00',
+      upline: getVal(indices.upline) || 'N/A',
+      ytdSales: getVal(indices.ytdSales) || '0.00',
+      availableCredit: getVal(indices.availableCredit) || '0.00',
+      branch: getVal(indices.branch) || 'N/A'
     };
   });
 
@@ -155,72 +182,173 @@ const parseCSV = (text: string): { members: Member[], sheetUpdateDate: string } 
 
 // --- Components ---
 
+const DetailModal = ({ member, onClose }: { member: Member, onClose: () => void }) => {
+  const overdueVal = parseFloat(member.overdueAmount.replace(/[^0-9.-]+/g,""));
+  const isOverdue = !isNaN(overdueVal) && overdueVal > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
+          <div className="flex items-center gap-5">
+            <div className="h-16 w-16 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-xl shadow-indigo-100">
+              <User size={32} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 leading-tight">{member.accountName}</h2>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Account No.</span>
+                <span className="font-mono text-base font-bold text-indigo-600">{member.accountNumber}</span>
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 max-h-[70vh] overflow-y-auto">
+          {/* Main Financials */}
+          <div className="space-y-6">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Account Status</h3>
+            <div className="grid grid-cols-1 gap-4">
+               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                 <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Available Credit Line</div>
+                 <div className="text-xl font-black text-slate-900">{formatPeso(member.availableCredit)}</div>
+               </div>
+               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                 <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Overdue Amount</div>
+                 <div className={`text-xl font-black ${isOverdue ? 'text-red-600' : 'text-slate-900'}`}>{formatPeso(member.overdueAmount)}</div>
+               </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Sales Performance</h3>
+            <div className="grid grid-cols-1 gap-4">
+               <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100">
+                 <div className="text-[9px] font-black text-emerald-600 uppercase mb-1">YTD Personal Sales</div>
+                 <div className="text-xl font-black text-emerald-700">{formatPeso(member.ytdSales)}</div>
+               </div>
+               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                 <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Brochure Sales (BPS)</div>
+                 <div className="text-xl font-black text-slate-900">{formatPeso(member.bps) || '₱0.00'}</div>
+               </div>
+            </div>
+          </div>
+
+          {/* Details */}
+          <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-6 pt-4 border-t border-slate-100">
+             <div>
+               <div className="text-[9px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1"><ShieldCheck size={10}/> Upline Name</div>
+               <div className="font-bold text-slate-800 text-sm">{member.upline}</div>
+             </div>
+             <div>
+               <div className="text-[9px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1"><MapPin size={10}/> Branch</div>
+               <div className="font-bold text-slate-800 text-sm">{member.branch}</div>
+             </div>
+             <div>
+               <div className="text-[9px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1"><Calendar size={10}/> Due Date</div>
+               <div className="font-bold text-slate-800 text-sm">{formatDate(member.nextDueDate)}</div>
+             </div>
+             <div>
+               <div className="text-[9px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1"><PhilippinePeso size={10}/> Next Due</div>
+               <div className="font-bold text-slate-800 text-sm">{formatPeso(member.nextDueAmount)}</div>
+             </div>
+          </div>
+        </div>
+
+        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+          <button 
+            onClick={onClose}
+            className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+          >
+            Close Profile
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
   return (
-    <button onClick={handleCopy} className={`p-1.5 rounded-lg transition-all ${copied ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
-      {copied ? <Check size={14} /> : <Copy size={14} />}
+    <button onClick={handleCopy} className={`p-1 rounded-lg transition-all ${copied ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
+      {copied ? <Check size={12} /> : <Copy size={12} />}
     </button>
   );
 };
 
-const MemberCard = ({ member }: { member: Member }) => {
+const MemberCard: React.FC<{ member: Member, onClick: () => void }> = ({ member, onClick }) => {
   const overdueVal = parseFloat(member.overdueAmount.replace(/[^0-9.-]+/g,""));
   const isOverdue = !isNaN(overdueVal) && overdueVal > 0;
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
-      <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div 
+      onClick={onClick}
+      className="group bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300 cursor-pointer hover:border-indigo-400 hover:shadow-2xl hover:shadow-indigo-500/10 transition-all active:scale-[0.99]"
+    >
+      <div className="py-2.5 px-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-100">
-            <User size={24} />
+          <div className="h-11 w-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-100 group-hover:scale-105 transition-transform">
+            <User size={22} />
           </div>
-          <div>
-            <h3 className="text-xl font-bold text-slate-900">{member.accountName}</h3>
+          <div className="flex flex-col">
+            <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">{member.accountName}</h3>
+            <span className="text-[10px] font-bold text-slate-500 mt-0.5 leading-none">
+              Upline: <span className="font-semibold text-indigo-500">{member.upline}</span>
+            </span>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Acc No.</span>
-              <span className="font-mono text-sm font-semibold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded flex items-center gap-2">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Acc No.</span>
+              <span className="font-mono text-[10px] font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1.5">
                 {member.accountNumber}
                 <CopyButton text={member.accountNumber} />
               </span>
             </div>
           </div>
         </div>
-        <div className={`px-4 py-1.5 rounded-full text-xs font-black flex items-center gap-2 border ${isOverdue ? 'bg-red-50 text-red-500 border-red-100' : 'bg-emerald-50 text-emerald-500 border-emerald-100'}`}>
-          <div className={`h-2 w-2 rounded-full ${isOverdue ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`}></div>
-          {isOverdue ? 'OVERDUE' : 'CURRENT'}
+        <div className="flex items-center gap-3">
+           <div className={`px-4 py-1 rounded-full text-[10px] font-black flex items-center gap-2 border ${isOverdue ? 'bg-red-50 text-red-500 border-red-100' : 'bg-emerald-50 text-emerald-500 border-emerald-100'}`}>
+            <div className={`h-1.5 w-1.5 rounded-full ${isOverdue ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`}></div>
+            {isOverdue ? 'OVERDUE' : 'CURRENT'}
+          </div>
+          <div className="p-2 text-slate-300 group-hover:text-indigo-400 transition-colors">
+            <Info size={18} />
+          </div>
         </div>
       </div>
-      <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-6">
+      <div className="py-3 px-6 grid grid-cols-2 md:grid-cols-4 gap-4 bg-white">
         <div>
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Next Due Date</div>
-          <div className="font-bold text-slate-900 flex items-center gap-2">
-            <Calendar size={14} className="text-indigo-400" />
+          <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Next Due Date</div>
+          <div className="font-bold text-slate-900 text-[13px] flex items-center gap-1.5">
+            <Calendar size={11} className="text-indigo-400" />
             {formatDate(member.nextDueDate)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Next Due Amount</div>
-          <div className="font-bold text-slate-900 flex items-center gap-2">
-            <PhilippinePeso size={14} className="text-indigo-400" />
+          <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Next Due Amount</div>
+          <div className="font-bold text-slate-900 text-[13px] flex items-center gap-1.5">
+            <PhilippinePeso size={11} className="text-indigo-400" />
             {formatPeso(member.nextDueAmount)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Brochure Sales (BPS)</div>
-          <div className="font-bold text-slate-900 flex items-center gap-2">
-            <TrendingUp size={14} className="text-emerald-400" />
+          <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Brochure Sales (BPS)</div>
+          <div className="font-bold text-slate-900 text-[13px] flex items-center gap-1.5">
+            <TrendingUp size={11} className="text-emerald-400" />
             {formatPeso(member.bps)}
           </div>
         </div>
         <div>
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Overdue Amount</div>
-          <div className={`font-black flex items-center gap-2 ${isOverdue ? 'text-red-600' : 'text-slate-900'}`}>
-            <AlertCircle size={14} className={isOverdue ? 'text-red-400' : 'text-slate-400'} />
+          <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Overdue Amount</div>
+          <div className={`font-black text-[13px] flex items-center gap-1.5 ${isOverdue ? 'text-red-600' : 'text-slate-900'}`}>
+            <AlertCircle size={11} className={isOverdue ? 'text-red-400' : 'text-slate-400'} />
             {formatPeso(member.overdueAmount)}
           </div>
         </div>
@@ -234,6 +362,7 @@ const App = () => {
   const [lastSync, setLastSync] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const fetchData = async () => {
@@ -265,22 +394,34 @@ const App = () => {
     fetchData();
   }, []);
 
-  const filteredMembers = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return [];
+  const filteredMembers = useMemo<Member[]>(() => {
+    const rawQuery = searchQuery.trim().toLowerCase();
+    if (!rawQuery) return [];
     
-    const numericQuery = query.replace(/[^0-9]/g, '');
+    const terms = rawQuery.split(/\s+/).filter(t => t.length > 0);
+    const numericQuery = rawQuery.replace(/[^0-9]/g, '');
     
-    return data.filter(m => {
+    const matches = data.map(m => {
       const name = m.accountName.toLowerCase();
       const num = m.accountNumber.toLowerCase();
       
-      const matchesName = name.includes(query);
-      const matchesNumRaw = num.includes(query);
-      const matchesNumNumeric = numericQuery.length > 0 && num.replace(/[^0-9]/g, '').includes(numericQuery);
+      let score = 0;
       
-      return matchesName || matchesNumRaw || matchesNumNumeric;
-    }).slice(0, 50);
+      if (name === rawQuery || num === rawQuery) score += 5000;
+      if (name.startsWith(rawQuery)) score += 3000;
+      const allTermsInName = terms.every(term => name.includes(term));
+      if (allTermsInName) score += 1000;
+      if (numericQuery.length > 0 && num.replace(/[^0-9]/g, '').includes(numericQuery)) score += 500;
+      const termCount = terms.filter(term => name.includes(term)).length;
+      score += termCount * 100;
+
+      return { member: m, score };
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.member);
+    
+    return matches.slice(0, 50);
   }, [data, searchQuery]);
 
   return (
@@ -292,7 +433,7 @@ const App = () => {
             <Database size={24} />
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Member Lookup</h1>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Avon Rep Lookup</h1>
             <div className="flex items-center gap-3 mt-1 text-slate-400 font-bold text-[10px] uppercase tracking-widest">
               {lastSync ? (
                 <>
@@ -332,7 +473,7 @@ const App = () => {
               type="text"
               autoComplete="off"
               spellCheck="false"
-              placeholder="Search by name or account number..."
+              placeholder="Search name or account number..."
               className="block w-full pl-16 pr-[120px] py-6 bg-white border border-slate-200 rounded-[2rem] shadow-2xl focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all text-2xl font-medium text-slate-900 placeholder:text-slate-300"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -353,7 +494,7 @@ const App = () => {
           </div>
           {data.length > 0 && (
             <div className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-              Searching {data.length.toLocaleString()} Active Member Records
+              Searching {data.length.toLocaleString()} Active Rep Records
             </div>
           )}
         </div>
@@ -366,12 +507,13 @@ const App = () => {
               <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Initial database sync in progress...</p>
             </div>
           ) : searchQuery && filteredMembers.length > 0 ? (
-            <div className="grid grid-cols-1 gap-6 pb-20">
-              <div className="flex justify-between items-center px-4">
+            <div className="grid grid-cols-1 gap-4 pb-20">
+              <div className="flex justify-between items-center px-4 mb-2">
                 <h2 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Found {filteredMembers.length} Matching Records</h2>
+                <span className="text-[10px] text-slate-300 italic font-medium">Click card for more details</span>
               </div>
               {filteredMembers.map((member, i) => (
-                <MemberCard key={`${member.accountNumber}-${i}`} member={member} />
+                <MemberCard key={`${member.accountNumber}-${i}`} member={member} onClick={() => setSelectedMember(member)} />
               ))}
             </div>
           ) : searchQuery && data.length > 0 ? (
@@ -379,7 +521,7 @@ const App = () => {
               <div className="p-6 bg-slate-100 text-slate-300 rounded-full mb-6">
                 <Search size={64} />
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-2">No matching members</h3>
+              <h3 className="text-2xl font-bold text-slate-900 mb-2">No matching records</h3>
               <p className="text-slate-500 max-w-xs">Double check the spelling or try searching by account number.</p>
             </div>
           ) : !searchQuery && data.length > 0 ? (
@@ -391,7 +533,7 @@ const App = () => {
                 </div>
               </div>
               <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Cloud Database Connected</h3>
-              <p className="text-slate-500 max-w-sm text-lg leading-relaxed">Search member records sourced directly from your Google Sheet.</p>
+              <p className="text-slate-500 max-w-sm text-lg leading-relaxed">Search Avon representative records sourced directly from your Google Sheet.</p>
             </div>
           ) : !loading && data.length === 0 && (
             <div className="py-20 flex flex-col items-center text-center">
@@ -409,12 +551,20 @@ const App = () => {
       <footer className="mt-20 pt-10 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-6 text-slate-400 text-[10px] font-black uppercase tracking-[0.3em]">
         <div className="flex items-center gap-3">
           <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50"></div>
-          &copy; 2025 CLOUD SYNC ENGINE v3.2
+          &copy; 2025 CLOUD SYNC ENGINE v3.8
+        </div>
+        <div className="text-center font-bold text-slate-300 flex flex-col gap-1 items-center">
+           <span>PROMPT BY: VANTABLACK <span className="mx-2">|</span> VIA GOOGLE AI</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="px-3 py-1 bg-slate-50 border border-slate-200 rounded-md text-[8px]">SOURCE: GOOGLE SHEETS</div>
         </div>
       </footer>
+
+      {/* Detail Modal */}
+      {selectedMember && (
+        <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} />
+      )}
     </div>
   );
 };
@@ -430,6 +580,12 @@ style.textContent = `
   .animate-spin-slow {
     animation: spin-slow 12s linear infinite;
   }
+  /* Animation helpers */
+  .animate-in { animation-duration: 200ms; animation-fill-mode: forwards; }
+  .fade-in { animation-name: fadeIn; }
+  .zoom-in-95 { animation-name: zoomIn; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes zoomIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 `;
 document.head.appendChild(style);
 
